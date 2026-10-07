@@ -1,77 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import vm from 'node:vm';
-import { readFileSync } from 'node:fs';
+import {summariseWeather,habitatAdvice,candidateList,scoutingTaxon,localDate,dateAgo} from '../dist/engine.js';
+import {species} from '../dist/catalogue.js';
+import {aliases} from '../dist/guide.js';
+const day=Date.parse('2026-10-07T00:00:00+01:00')/1000;
+function fixture(){const time=Array.from({length:697},(_,i)=>day+(i-672)*3600);return {current:{time:day+12.5*3600,soil_moisture_3_to_9cm:.2,soil_moisture_9_to_27cm:.15,soil_temperature_6cm:12},daily:{time:[day-86400,day]},hourly:{time,precipitation:time.map(()=>0),temperature_2m:time.map(()=>12),relative_humidity_2m:time.map(()=>85),wind_speed_10m:time.map(()=>5),soil_moisture_3_to_9cm:time.map(()=>.19),et0_fao_evapotranspiration:time.map(()=>.05)}};}
+test('today includes elapsed hourly rain, excludes midnight rain, future hours and full-day forecasts',()=>{const d=fixture(),h=d.hourly;h.precipitation[h.time.indexOf(day)]=9;h.precipitation[h.time.indexOf(day+3600)]=3;h.precipitation[h.time.indexOf(day+13*3600)]=100;d.daily.precipitation_sum=[999,999];const w=summariseWeather(d,d.current.time);assert.equal(w.rainToday,3);assert.equal(w.rain7,12);assert.equal(w.hourThrough,day+12*3600);assert.equal(w.soil,.2);assert.ok(Math.abs(w.delta-.01)<1e-8);assert.equal(w.rain28,12);});
+test('current-day calculations respect the London date in summer and GMT in winter',()=>{assert.equal(localDate(Date.parse('2026-10-06T23:30:00Z')/1000),'2026-10-07');assert.equal(localDate(Date.parse('2026-12-06T23:30:00Z')/1000),'2026-12-06');assert.equal(dateAgo('2026-11-01',13),'2026-10-19');const d=fixture();d.current.time=day+1800;assert.equal(summariseWeather(d,d.current.time).rainToday,0);});
+test('missing history, humidity or soil cannot produce a favourable score or made-up measurement',()=>{for(const key of ['precipitation','relative_humidity_2m']){const d=fixture();d.hourly[key][d.hourly.time.indexOf(day)]=null;assert.equal(summariseWeather(d,d.current.time).score,null);}const d=fixture();d.current.soil_moisture_3_to_9cm=null;const w=summariseWeather(d,d.current.time);assert.equal(w.soil,null);assert.equal(w.score,null);const broken=fixture();broken.hourly.time.splice(670,1);for(const key of Object.keys(broken.hourly))if(key!=='time')broken.hourly[key].splice(670,1);assert.equal(summariseWeather(broken,broken.current.time).score,null);});
+test('frost and drying change the daily route, with an index bounded to 0–100',()=>{const d=fixture();d.hourly.temperature_2m[d.hourly.time.indexOf(day+2*3600)]=-2;let w=summariseWeather(d,d.current.time);assert.equal(w.frost,true);assert.match(habitatAdvice(w)[0].text,/frost/);assert.ok(w.score>=0&&w.score<=100);d.current.soil_moisture_3_to_9cm=.15;d.hourly.temperature_2m.fill(12);w=summariseWeather(d,d.current.time);assert.equal(w.drying,true);assert.match(habitatAdvice(w)[0].text,/shaded hollows/);});
+test('no eight-species cap: catalogue unique, user examples searchable, nearby unknown species retained',()=>{assert.ok(species.length>=110);assert.equal(new Set(species.map(s=>s.latin)).size,species.length);assert.match(species.find(s=>s.latin==='Phaeolus schweinitzii').where,/pine/);assert.match(species.find(s=>s.latin==='Lactarius blennius').searchNames,/slimy.*glutinous/);const list=candidateList(species,{'Fixture fungus':{id:1,count:1,name:'An unfamiliar fungus'}},{'Amanita muscaria':{id:2,count:9999}},10);assert.equal(list[0].latin,'Fixture fungus');assert.equal(list[0].habitat,'unknown');assert.equal(list.length,species.length+1);assert.equal(aliases['Oudemansiella mucida'],'Mucidula mucida');});
+test('lichen and tar spot are excluded, mushrooms and wood-decay ascomycetes retained',()=>{assert.equal(scoutingTaxon({rank:'species',name:'Flavoparmelia caperata',ancestor_ids:[54743]}),false);assert.equal(scoutingTaxon({rank:'species',name:'Rhytisma acerinum',ancestor_ids:[47170]}),false);assert.equal(scoutingTaxon({rank:'species',name:'Xylaria hypoxylon',ancestor_ids:[53539]}),true);assert.equal(scoutingTaxon({rank:'species',name:'Hypholoma fasciculare',ancestor_ids:[50814]}),true);assert.equal(scoutingTaxon({rank:'genus',name:'Hypholoma'}),false);});
 
-const root = new URL('../', import.meta.url);
-const guide = readFileSync(new URL('dist/guide.js', root), 'utf8').replace(/export /g, '');
-const app = readFileSync(new URL('dist/app.js', root), 'utf8')
-  .replace(/^import[^\n]+\n/, '')
-  .replace(/render\(\);refresh\(\);\s*$/, '');
-function harness() {
-  const elements = new Map();
-  const element = id => {
-    if (!elements.has(id)) elements.set(id, {
-      value: id === 'habitat' ? 'all' : id === 'view' ? 'seasonal' : '',
-      addEventListener() {}, querySelectorAll() { return []; }, showModal() {},
-      replaceChildren() {}, append() {}, hidden: false, textContent: '', innerHTML: ''
-    });
-    return elements.get(id);
-  };
-  const context = vm.createContext({
-    URL, URLSearchParams, Intl, Date, AbortSignal,
-    localStorage: { getItem() { return null; }, setItem() {} },
-    navigator: {}, window: { addEventListener() {} },
-    document: { getElementById: element, querySelectorAll() { return []; } },
-    fetch: async () => { throw new Error('Network not available in fixture'); }
-  });
-  vm.runInContext(guide + '\n' + app, context);
-  return { context, element, run: code => vm.runInContext(code, context) };
+// Exercise the real browser data adapter, including pagination and name mapping.
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+function harness(){
+ const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,{value:id==='habitat'?'all':id==='view'?'seasonal':'',addEventListener(){},querySelectorAll(){return[];},showModal(){},replaceChildren(){},append(){}});return elements.get(id);};
+ const context=vm.createContext({species,aliases,summariseWeather,habitatAdvice,candidateList,scoutingTaxon,localDate,dateAgo,URL,URLSearchParams,Date,Intl,AbortSignal,localStorage:{getItem(){return null;},setItem(){}},navigator:{},window:{addEventListener(){}},document:{getElementById:element,querySelectorAll(){return[];}},fetch:async()=>{throw new Error('Offline fixture');}});
+ const source=readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*\n/gm,'').replace(/render\(\);refresh\(\);\s*$/,'');vm.runInContext(source,context);return {context,element,run:code=>vm.runInContext(code,context)};
 }
-test('guide has 90 distinct species; absent weather is not scored as favourable', () => {
-  const h = harness();
-  assert.equal(h.run('species.length'), 90);
-  assert.equal(h.run('new Set(species.map(s=>s.latin)).size'), 90);
-  assert.equal(h.run('assessment(species[0]).label'), 'Weather unavailable');
+test('the live adapter retrieves later pages, reconciles synonyms and keeps unfamiliar mushrooms',async()=>{
+ const h=harness(),pages=[];h.context.fetch=async url=>{const q=new URL(url).searchParams,page=+q.get('page');pages.push(page);assert.ok(q.get('d1'));assert.equal(q.get('month'),null);return {ok:true,json:async()=>({total_results:501,results:page===1?Array.from({length:500},(_,i)=>({count:1,taxon:{id:i+1000,rank:'species',name:`Fixture species${i}`}})):[{count:7,taxon:{id:99,rank:'species',name:'Oudemansiella mucida'}}]})};};
+ const result=await h.run('observations(state.location,true)');assert.deepEqual(pages,[1,2]);assert.equal(Object.keys(result.counts).length,501);assert.equal(result.counts['Mucidula mucida'].count,7);assert.equal(result.coverage.truncated,false);
+ h.context.records=result.counts;h.run('state.recent=records');assert.equal(h.run('candidates().length'),species.length+500);
 });
-test('an unlisted local species appears with evidence, photo and no invented habitat score', async () => {
-  const h = harness();
-  h.context.fetch = async () => ({ ok: true, json: async () => ({ total_results: 2, results: [
-    { count: 40, taxon: { id: 123, rank: 'species', name: 'Testus localis', preferred_common_name: 'Fixture fungus', default_photo: { id: 5, medium_url: 'https://static.inaturalist.org/example.jpg', attribution: 'Fixture CC BY' } } },
-    { count: 60, taxon: { id: 124, rank: 'genus', name: 'Testus' } }
-  ] }) });
-  const result = await h.run('observations(state.location)');
-  assert.equal(Object.keys(result.counts).length, 1);
-  h.context.records = result.counts;
-  h.run('state.observations=records;state.observationsAt=new Date().toISOString();render()');
-  assert.match(h.element('species-grid').innerHTML, /Fixture fungus/);
-  assert.equal(h.run('selectedCandidates()[0].latin'), 'Testus localis');
-  assert.equal(h.run('assessCandidate(selectedCandidates()[0]).score'), 0);
-  assert.equal(h.run('selectedCandidates()[0].habitat'), 'unknown');
-  h.run('showDetails("local-123")');
-  assert.match(h.element('detail-content').innerHTML, /No documented UK season/);
-});
-test('records beyond the first page survive; synonyms map to existing guide entries', async () => {
-  const h = harness(); const pages = [];
-  h.context.fetch = async url => {
-    const page = Number(new URL(url).searchParams.get('page')); pages.push(page);
-    return { ok: true, json: async () => ({ total_results: 501, results: page === 1
-      ? Array.from({ length: 500 }, (_, i) => ({ count: 1, taxon: { id: 1000 + i, rank: 'species', name: `Fixture species${i}` } }))
-      : [{ count: 8, taxon: { id: 20, rank: 'species', name: 'Lepista nuda' } }] }) };
-  };
-  const result = await h.run('observations(state.location)');
-  assert.deepEqual(pages, [1, 2]);
-  assert.equal(Object.keys(result.counts).length, 501);
-  assert.equal(result.counts['Collybia nuda'].count, 8);
-  assert.equal(result.coverage.truncated, false);
-});
-test('habitat and search filters retain sulphur tuft; all-guide view exposes all entries', () => {
-  const h = harness(); h.element('view').value = 'all';
-  assert.equal(h.run('selectedCandidates().length'), 90);
-  h.element('species-search').value = 'Hypholoma';
-  assert.equal(h.run('selectedCandidates().length'), 3);
-  h.element('species-search').value = 'sulphur tuft'; h.element('habitat').value = 'wood';
-  assert.equal(h.run('selectedCandidates().length'), 1);
-  h.element('habitat').value = 'grass';
-  assert.equal(h.run('selectedCandidates().length'), 0);
-});
+test('browser filters find the requested common-name aliases and preserve all guide seasons',()=>{const h=harness();h.element('view').value='all';assert.equal(h.run('selectedCandidates().length'),species.length);for(const word of ['dyers','slimy','glutinous']){h.element('species-search').value=word;assert.equal(h.run('selectedCandidates().length'),1);}h.element('habitat').value='wood';assert.equal(h.run('selectedCandidates().length'),0);});
+test('overnight minimum includes 18:00 and local 08:00 across the autumn clock change',()=>{const d=fixture(),fallbackDay=Date.parse('2026-10-25T00:00:00+01:00')/1000,shift=fallbackDay-day;d.hourly.time=d.hourly.time.map(t=>t+shift);d.daily.time=d.daily.time.map(t=>t+shift);d.current.time+=shift;d.hourly.temperature_2m[d.hourly.time.indexOf(fallbackDay+9*3600)]=-3;assert.equal(summariseWeather(d,d.current.time).overnight,-3);d.hourly.temperature_2m[d.hourly.time.indexOf(fallbackDay-6*3600)]=-4;assert.equal(summariseWeather(d,d.current.time).overnight,-4);});
