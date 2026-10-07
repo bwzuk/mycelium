@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {summariseWeather,habitatAdvice,candidateList,scoutingTaxon,localDate,dateAgo} from '../dist/engine.js';
+import {summariseWeather,habitatAdvice,candidateList,scoutingTaxon,localDate,dateAgo,taxonGroup,OBSERVATION_TAXA} from '../dist/engine.js';
 import {species} from '../dist/catalogue.js';
 import {aliases} from '../dist/guide.js';
 const day=Date.parse('2026-10-07T00:00:00+01:00')/1000;
@@ -16,8 +16,8 @@ test('lichen and tar spot are excluded, mushrooms and wood-decay ascomycetes ret
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 function harness(){
- const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,{value:id==='habitat'?'all':id==='view'?'seasonal':'',addEventListener(){},querySelectorAll(){return[];},showModal(){},replaceChildren(){},append(){}});return elements.get(id);};
- const context=vm.createContext({species,aliases,summariseWeather,habitatAdvice,candidateList,scoutingTaxon,localDate,dateAgo,URL,URLSearchParams,Date,Intl,AbortSignal,localStorage:{getItem(){return null;},setItem(){}},navigator:{},window:{addEventListener(){}},document:{getElementById:element,querySelectorAll(){return[];}},fetch:async()=>{throw new Error('Offline fixture');}});
+ const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,{value:id==='habitat'||id==='group'?'all':id==='view'?'seasonal':'',addEventListener(){},querySelectorAll(){return[];},showModal(){},replaceChildren(){},append(){}});return elements.get(id);};
+ const context=vm.createContext({species,aliases,summariseWeather,habitatAdvice,candidateList,scoutingTaxon,localDate,dateAgo,taxonGroup,OBSERVATION_TAXA,URL,URLSearchParams,Date,Intl,AbortSignal,localStorage:{getItem(){return null;},setItem(){}},navigator:{},window:{addEventListener(){}},document:{getElementById:element,querySelectorAll(){return[];}},fetch:async()=>{throw new Error('Offline fixture');}});
  const source=readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*\n/gm,'').replace(/render\(\);refresh\(\);\s*$/,'');vm.runInContext(source,context);return {context,element,run:code=>vm.runInContext(code,context)};
 }
 test('the live adapter retrieves later pages, reconciles synonyms and keeps unfamiliar mushrooms',async()=>{
@@ -27,3 +27,12 @@ test('the live adapter retrieves later pages, reconciles synonyms and keeps unfa
 });
 test('browser filters find the requested common-name aliases and preserve all guide seasons',()=>{const h=harness();h.element('view').value='all';assert.equal(h.run('selectedCandidates().length'),species.length);for(const word of ['dyers','slimy','glutinous']){h.element('species-search').value=word;assert.equal(h.run('selectedCandidates().length'),1);}h.element('habitat').value='wood';assert.equal(h.run('selectedCandidates().length'),0);});
 test('overnight minimum includes 18:00 and local 08:00 across the autumn clock change',()=>{const d=fixture(),fallbackDay=Date.parse('2026-10-25T00:00:00+01:00')/1000,shift=fallbackDay-day;d.hourly.time=d.hourly.time.map(t=>t+shift);d.daily.time=d.daily.time.map(t=>t+shift);d.current.time+=shift;d.hourly.temperature_2m[d.hourly.time.indexOf(fallbackDay+9*3600)]=-3;assert.equal(summariseWeather(d,d.current.time).overnight,-3);d.hourly.temperature_2m[d.hourly.time.indexOf(fallbackDay-6*3600)]=-4;assert.equal(summariseWeather(d,d.current.time).overnight,-4);});
+test('both observation windows request fungi and slime moulds, preserve genus identification and reconcile new names',async()=>{const h=harness();h.context.fetch=async url=>{const q=new URL(url).searchParams;assert.equal(q.get('taxon_id'),'47170,47685');return {ok:true,json:async()=>({total_results:5,results:[
+ {count:2,taxon:{id:55483,rank:'species',name:'Fuligo septica',ancestor_ids:[47685],default_photo:{id:1,medium_url:'https://static.inaturalist.org/slime.jpg',attribution:'Fixture photographer CC BY'}}},
+ {count:3,taxon:{id:47681,rank:'genus',name:'Lycogala',ancestor_ids:[47685]}},
+ {count:1,taxon:{id:1441996,rank:'species',name:'Trichia decipiens',ancestor_ids:[47685]}},
+ {count:1,taxon:{id:1504198,rank:'species',name:'Mucilago crustacea',ancestor_ids:[47685]}},
+ {count:1,taxon:{id:9,rank:'species',name:'Flavoparmelia caperata',ancestor_ids:[54743]}}
+ ]})};};for(const recent of [true,false]){const r=await h.run(`observations(state.location,${recent})`);assert.equal(Object.keys(r.counts).length,4);assert.equal(r.counts.Lycogala.rank,'genus');assert.equal(r.counts['Fuligo septica'].group,'slime');assert.ok(r.counts['Hemitrichia decipiens']);assert.ok(r.counts['Didymium spongiosum']);}assert.equal(h.run("photos['Fuligo septica'].attribution"),'Fixture photographer CC BY');});
+test('slime moulds are visible without local records, with correct habitat, group filtering and sources',()=>{const h=harness();h.element('group').value='slime';assert.equal(h.run('selectedCandidates().length'),8);assert.equal(h.run('selectedCandidates().every(s=>s.group==="slime")'),true);h.element('species-search').value='wolf';assert.equal(h.run('selectedCandidates().length'),2);h.element('species-search').value='';h.element('habitat').value='grass';assert.equal(h.run('selectedCandidates()[0].latin'),'Didymium spongiosum');h.element('group').value='fungi';assert.equal(h.run('selectedCandidates().some(s=>s.group==="slime")'),false);assert.ok(species.filter(s=>s.group==='slime').every(s=>s.sourceURL?.startsWith('https://www.naturespot.org/')));});
+test('unlisted local slime moulds retain their group and identification level',()=>{const list=candidateList(species,{'Unlisted genus':{id:101,count:1,group:'slime',rank:'genus'}},null,10);assert.equal(list[0].group,'slime');assert.equal(list[0].rank,'genus');assert.equal(list[0].habitat,'unknown');});

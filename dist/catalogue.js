@@ -1,3 +1,4 @@
+import {slimeGuide} from './slime-guide.js';
 import {extendedGuide} from './guide.js';
 export const species = [
  {id:'oyster',name:'Oyster mushroom',latin:'Pleurotus ostreatus',habitat:'wood',months:[1,2,3,4,9,10,11,12],temp:[3,16],where:'Fallen or standing dead hardwood, especially beech. Check overlapping shelves on trunks.',description:'Broad, fan-shaped grey to brown caps grow in overlapping shelves. Pale gills run down a short, often sideways stem.',caution:'Other Pleurotus species and other pale, wood-growing gilled fungi can look similar. Colour and shape alone cannot establish identity.',source:'pleurotus-ostreatus',timing:'Cool, damp periods are a useful scouting cue for this wood-decay species. A single rain event does not determine its timing.'},
@@ -43,3 +44,5 @@ species.find(s=>s.latin==='Meripilus giganteus').timing='The source gives late J
 
 // Per-species temperature bands were unvalidated; do not use them to predict fruiting.
 for(const s of species) delete s.temp;
+
+species.push(...slimeGuide);

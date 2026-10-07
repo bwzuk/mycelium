@@ -7,13 +7,13 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const dist = path.join(root, 'dist');
 // The app is authored as deployable static files. The cloud build validates
 // that exact output; no dependencies or network calls are needed to build it.
-for (const filename of ['app.js', 'guide.js', 'catalogue.js', 'engine.js', 'sw.js']) {
+for (const filename of ['app.js', 'guide.js', 'catalogue.js', 'slime-guide.js', 'engine.js', 'sw.js']) {
   const check = spawnSync(process.execPath, ['--check', path.join(dist, filename)], { stdio: 'inherit' });
   if (check.status !== 0) throw new Error(`Invalid JavaScript: ${filename}`);
 }
 const html = await readFile(path.join(dist, 'index.html'), 'utf8');
 const manifest = JSON.parse(await readFile(path.join(dist, 'manifest.webmanifest'), 'utf8'));
-for (const filename of ['index.html', 'style.css', 'app.js', 'guide.js', 'catalogue.js', 'engine.js', 'sw.js', 'favicon.svg']) {
+for (const filename of ['index.html', 'style.css', 'app.js', 'guide.js', 'catalogue.js', 'slime-guide.js', 'engine.js', 'sw.js', 'favicon.svg']) {
   await access(path.join(dist, filename));
 }
 for (const icon of manifest.icons) await access(path.join(dist, icon.src));
