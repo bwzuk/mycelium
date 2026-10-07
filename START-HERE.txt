@@ -1,0 +1,67 @@
+MYCELIUM — SURREY MUSHROOM SCOUT
+
+1. Unzip this folder.
+2. Open a terminal in the mycelium folder.
+3. Run:
+
+   python3 -m http.server 8080 --directory dist
+
+   Windows alternative:
+   py -m http.server 8080 --directory dist
+
+4. Open http://localhost:8080 in your browser.
+
+Do not double-click index.html. Geolocation and service workers need a
+secure origin; localhost works for desktop testing.
+
+The app opens around Guildford. You can use your location or search a UK
+town. An internet connection is needed for live weather, local records,
+and the first reference photo loads. Once loaded, the last report and
+viewed photos can be used offline. Retained data shows its original fetch
+time.
+
+INSTALL / PHONE TESTING
+
+For a phone, deploy the contents of dist/ to a static HTTPS host.
+Plain http://your-computer-IP:8080 does not enable PWA or GPS features.
+Android: browser menu > Install app / Add to home screen.
+iPhone: Safari > Share > Add to Home Screen.
+
+WHAT IS IN THIS FIRST VERSION
+
+- Recent 14-day model weather history from Open-Meteo.
+- Research-grade historical iNaturalist sightings within 30 km for the
+  current calendar month, across all years.
+- A broad UK habitat guide plus additional species from local records, photos, source
+  links, seasons, and an explanation of each weather signal.
+- Transparent exploratory scoring, not a calibrated fruiting model.
+- A PWA manifest, app icons, service worker, and last-report storage.
+
+KNOWN VERIFICATION LIMIT
+
+JavaScript syntax, PWA packaging, weather validation and scoring logic
+were checked locally. Remote session network requests stalled, so live
+provider responses, image loading, browser installation, and deployment
+were not verified. If a provider is unreachable, the app says so instead
+of showing invented weather or sightings. This is a first version for
+local testing, not an expert-validated mushroom forecasting service.
+
+The app is for scouting and observation. Never use it to decide whether
+a mushroom is safe to eat.
+
+VERSION 3 — BROADER SPECIES COVERAGE
+
+Local records now add species dynamically, even if they are not in the UK
+guide. The app retrieves up to 3,000 taxa and displays all species-level
+results using Show more. Historical sightings are not proof of a current
+flush. Species without guide ecology show habitat as unknown and receive
+no weather score. Expanded guide notes have not been independently
+source-checked or expert-validated.
+
+Use the list selector to see seasonal candidates, local records only,
+or the entire UK guide. Search by name and filter by habitat. The default
+24-card display is only a page size, not a species coverage limit.
+
+Replace the old dist folder with this one. Keep the same local server
+address, reload while online, then reload once more if the old version
+still appears so the updated service worker can take control.

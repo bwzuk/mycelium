@@ -1,0 +1,8 @@
+.git
+.openai
+node_modules
+*.zip
+*.tar.gz
+VERCEL-SETUP.md
+START-HERE.txt
+README.md
